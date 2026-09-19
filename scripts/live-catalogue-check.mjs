@@ -15,6 +15,9 @@ const page = await context.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 let requests = 0;
+await context.route("**prices.openfoodfacts.org/api/v1/prices?**", (r) =>
+  r.fulfill({ json: { items: [], total: 0 } }),
+);
 await context.route("**/api/v3/product/**", async (route) => {
   requests++;
   const code = new URL(route.request().url()).pathname.split("/").pop();

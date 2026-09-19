@@ -2,7 +2,7 @@
 
 [Open Stash](https://sean-p-clohessy.github.io/stash/)
 
-React + TypeScript + Vite, deployed independently to GitHub Pages. Product identification is live through Open Food Facts v3. Retailer prices remain explicitly **demo data** until an authorised pricing API is connected.
+React + TypeScript + Vite, deployed independently to GitHub Pages. Product identification is live through Open Food Facts v3. Free UK price observations are connected through Open Prices. Confirmed current retailer offers still require an authorised pricing feed; demo offers and reported prices are labelled separately.
 
 ## Run and verify
 
@@ -82,3 +82,17 @@ Fonts load from Google Fonts with system fallbacks. There is no authentication, 
 ### Configured pricing UI check
 
 `npm run test:pricing` targets a second local Vite server on port 5174 started with `VITE_STASH_API_URL=https://prices.example.test`. The browser test intercepts that host with fixtures; no retailer is queried. It checks live provenance, timestamps, membership prices, delivery totals and fallback labelling. These fixture results are not evidence of a connected real price provider.
+
+## Free reported-price integration
+
+Open Prices is now connected directly from GitHub Pages using its public CORS-enabled API. No account, API key, paid subscription or separate hosting is required. Open a discovered/manual product's comparison page to load exact-barcode GBP observations from physical UK shops.
+
+These are **shopper-reported observations**, not confirmed current retailer offers. Every result shows shop/location, original observation date and a link to the source record. A fresh API fetch does not make an old observation current. Reports never enter live-price badges, historical “excellent deal” scores, stock recommendations or alert triggers.
+
+The integration fetches at most 50 newest GBP records for the exact barcode in the past year; filtering rejects foreign/online locations, duplicates, malformed prices and future dates. Only the latest report per shop is shown. It is not comprehensive UK market coverage. Synthetic seeded barcode mappings are not queried; scan a real pack instead.
+
+A separate illustrative stock-up calculation reuses the integer engine only when source and saved pack metadata agree, the report is at most 30 days old, the price is not discounted, and it is a per-pack price. It assumes repeated packs are available at that observed price; it does not claim stock, purchase limits, today’s price or delivery. Weighted, ambiguous, discounted and old reports are displayed without estimates.
+
+Requests run only when viewing a product, share in-flight requests and use a five-minute in-memory cache capped at 100 barcodes. Timeout/network errors have a retry state; empty coverage has an explicit message. Data attribution and ODbL links appear in the app. Sources: [Open Prices API](https://prices.openfoodfacts.org/api/docs), [project explanation](https://openfoodfacts.github.io/documentation/docs/Product-Opener/api/tutorials/product-prices/).
+
+A current checkout-price feed remains a separate future authorised integration using VITE_STASH_API_URL. The serverless scaffold remains undeployed.

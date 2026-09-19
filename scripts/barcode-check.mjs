@@ -9,6 +9,9 @@ const browser = await chromium.launch({
   headless: true,
 });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await page.route("**prices.openfoodfacts.org/api/v1/prices?**", (r) =>
+  r.fulfill({ json: { items: [], total: 0 } }),
+);
 const L = [
   "0001101",
   "0011001",

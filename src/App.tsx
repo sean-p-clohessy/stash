@@ -25,6 +25,7 @@ import { money, score, unitPrice } from "./services/comparisonService";
 import { useStored } from "./services/storage";
 import { ProductArt } from "./components/ProductArt";
 import Scan from "./pages/Scan";
+import { ReportedPrices } from "./components/ReportedPrices";
 import { useDiscoveredProducts } from "./services/productCache";
 import { productMeta, unitLabel, packLabel } from "./services/productMetadata";
 import { usePricing } from "./hooks/usePricing";
@@ -495,8 +496,18 @@ export default function App() {
                     )}
                   </div>
                 </div>
+                <ReportedPrices
+                  key={selected.id}
+                  product={selected}
+                  quantity={quantity}
+                  onScan={() => navigate("scan")}
+                />
                 <div className="section-heading offers-title">
-                  <h3>{results.length} ways to stock up</h3>
+                  <h3>
+                    {results.length
+                      ? `${results.length} ways to stock up`
+                      : "Current checkout prices"}
+                  </h3>
                   <span>
                     {selectedPrices?.kind === "demo"
                       ? "DEMO PRICES"
@@ -603,7 +614,9 @@ export default function App() {
                   </article>
                 ))}
                 {!results.length && (
-                  <div className="empty panel">
+                  <div
+                    className={`empty panel ${!selected.isSeeded ? "unconnected-pricing" : ""}`}
+                  >
                     {selectedPrices?.offers.length
                       ? "No eligible offers for this quantity. Try a smaller amount or adjust your memberships."
                       : selectedPrices?.status === "ready"

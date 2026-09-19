@@ -2148,3 +2148,97 @@ select:focus-visible {
     flex-direction: column;
   }
 }
+.reported-prices {
+  margin: 28px 0 32px;
+}
+.reported-intro {
+  font-size: 14px;
+  margin-bottom: 18px;
+}
+.observed-card {
+  padding: 20px;
+  margin: 14px 0;
+}
+.observed-price {
+  font-size: 24px;
+  color: #76e4f1;
+}
+.observed-price small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.observed-location {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 13px;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.observed-location svg {
+  margin-top: 4px;
+}
+.observed-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 12px;
+  color: #bdc7d8;
+  margin: 12px 0;
+}
+.observation-estimate {
+  padding: 15px;
+  margin: 16px 0;
+  background: #103448;
+  border-radius: 8px;
+}
+.observation-estimate strong,
+.observation-estimate span {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 7px;
+}
+.observation-estimate p,
+.discount-note {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.discount-note {
+  margin: 12px 0;
+  color: #e3c777;
+}
+.observed-card > .text-button {
+  margin-top: 14px;
+}
+.observed-empty {
+  padding: 22px;
+}
+.observed-empty p {
+  font-size: 14px;
+  margin-top: 10px;
+}
+.reported-attribution {
+  margin-top: 17px;
+}
+.reported-seed .text-button {
+  margin-top: 10px;
+}
+.reported-seed {
+  padding: 20px;
+  margin: 24px 0;
+}
+.reported-seed p {
+  font-size: 14px;
+  margin-top: 8px;
+}
+.unconnected-pricing {
+  padding: 22px;
+  align-items: flex-start;
+  text-align: left;
+  font-size: 14px;
+  gap: 8px;
+}
+.unconnected-pricing p {
+  font-size: 13px;
+}
