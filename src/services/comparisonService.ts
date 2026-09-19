@@ -62,6 +62,11 @@ export function optimise(
   };
 }
 export function score(product: Product, price: number) {
+  if (
+    !product.history.length ||
+    product.history.some((v) => !Number.isFinite(v) || v <= 0)
+  )
+    return null;
   const average =
     product.history.reduce((a, b) => a + b, 0) / product.history.length;
   const below = ((average - price) / average) * 100;

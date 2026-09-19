@@ -1,4 +1,5 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
+import { Package } from "lucide-react";
 import type { Product } from "../models";
 export function ProductArt({
   product,
@@ -7,6 +8,28 @@ export function ProductArt({
   product: Product;
   large?: boolean;
 }) {
+  const [failed, setFailed] = useState<string>();
+  if (product.image && failed !== product.image)
+    return (
+      <div className={`product-art photo-art ${large ? "large" : ""}`}>
+        <img
+          src={product.image}
+          alt={product.name}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(product.image)}
+        />
+      </div>
+    );
+  if (!product.isSeeded)
+    return (
+      <div
+        className={`product-art fallback-art ${large ? "large" : ""}`}
+        aria-hidden="true"
+      >
+        <Package size={44} strokeWidth={1.25} />
+      </div>
+    );
   return (
     <div
       className={`product-art ${large ? "large" : ""}`}

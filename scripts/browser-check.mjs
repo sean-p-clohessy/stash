@@ -2,7 +2,10 @@ import { chromium } from "@playwright/test";
 import assert from "node:assert/strict";
 const browser = await chromium.launch({
   executablePath:
-    process.env.BROWSER_EXECUTABLE || (process.platform === 'win32' ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" : undefined),
+    process.env.BROWSER_EXECUTABLE ||
+    (process.platform === "win32"
+      ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+      : undefined),
   headless: true,
 });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } });
@@ -39,7 +42,7 @@ await page.getByRole("button", { name: "Scan", exact: true }).click();
 await page
   .getByRole("button", { name: "Try the Fanta Zero demo barcode" })
   .click();
-await page.getByRole("button", { name: "Find stock-up deals" }).click();
+await page.getByRole("button", { name: "Find prices" }).click();
 assert.equal(await page.locator("h1").innerText(), "Fanta Zero");
 await page.screenshot({ path: "artifacts/comparison.png", fullPage: true });
 await page.getByRole("button", { name: "Custom", exact: true }).click();

@@ -1,16 +1,34 @@
 export type Product = {
   id: string;
   name: string;
-  brand: string;
-  variant: string;
-  category: "Drinks" | "Snacks" | "Household";
+  brand?: string;
+  variant?: string;
+  genericName?: string;
+  category?: string;
+  categories?: string[];
   barcode: string;
+  unitQuantity?: number;
+  measurement?: string;
+  unit?: string;
+  color?: string;
+  art?: "can" | "box" | "roll";
+  packCount?: number;
+  quantityText?: string;
+  servingSize?: string;
+  productType?: string;
+  image?: string;
+  source: string;
+  sourceProductId?: string;
+  isSeeded: boolean;
+  history: number[];
+};
+export type SeededProduct = Product & {
+  brand: string;
+  unit: string;
   unitQuantity: number;
   measurement: string;
-  unit: string;
-  color: string;
+  category: string;
   art: "can" | "box" | "roll";
-  history: number[];
 };
 export type Retailer = {
   id: string;
@@ -19,6 +37,7 @@ export type Retailer = {
   loyalty?: string;
   online: boolean;
   deliveryPence: number;
+  deliveryNote?: string;
 };
 export type Offer = {
   id: string;
@@ -27,7 +46,22 @@ export type Offer = {
   title: string;
   packSize: number;
   pricePence: number;
+  provider?: string;
+  retailerProductId?: string;
+  productUrl?: string;
+  loyaltyPricePence?: number;
+  loyaltyProgramme?: string;
+  availability?: "in_stock" | "out_of_stock" | "unknown";
+  retrievedAt?: string;
+  isLive?: boolean;
   loyalty?: string;
+};
+export type LiveOffer = Offer & {
+  provider: string;
+  retailerProductId: string;
+  availability: "in_stock" | "out_of_stock" | "unknown";
+  retrievedAt: string;
+  isLive: true;
 };
 export type Comparison = {
   retailer: Retailer;

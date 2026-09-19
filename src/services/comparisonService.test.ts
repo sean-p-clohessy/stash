@@ -82,7 +82,7 @@ describe("quantity optimisation", () => {
     }
   });
   it("computes historical comparisons transparently", () => {
-    const result = score({ ...products[0], history: [40, 60] }, 35);
+    const result = score({ ...products[0], history: [40, 60] }, 35)!;
     expect(result.average).toBe(50);
     expect(result.lowest).toBe(40);
     expect(result.below).toBe(30);

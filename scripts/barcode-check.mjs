@@ -2,7 +2,10 @@ import { chromium } from "@playwright/test";
 import assert from "node:assert/strict";
 const browser = await chromium.launch({
   executablePath:
-    process.env.BROWSER_EXECUTABLE || (process.platform === 'win32' ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" : undefined),
+    process.env.BROWSER_EXECUTABLE ||
+    (process.platform === "win32"
+      ? "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
+      : undefined),
   headless: true,
 });
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -49,22 +52,27 @@ await page.getByRole("button", { name: "Scan", exact: true }).click();
 await page
   .locator("input[type=file]")
   .setInputFiles("artifacts/test-barcode.png");
-await page.getByRole("button", { name: "Find stock-up deals" }).waitFor();
+await page.getByRole("button", { name: "Find prices" }).waitFor();
 assert.match(await page.locator(".scan-result").innerText(), /Fanta Zero/);
-await page.route("**/api/v2/product/**", (r) => r.abort());
+await page.route("**/api/v3/product/**", (r) => r.abort());
 await page.getByLabel("Barcode number").fill("1234567890123");
 await page.getByRole("button", { name: "Find product", exact: true }).click();
 await page
   .getByText("The product database is unavailable.", { exact: false })
   .waitFor();
 await page.getByLabel("Product name", { exact: true }).fill("Pepsi Max");
-await page.getByRole("button", { name: "Find stock-up deals" }).click();
-assert.equal(await page.locator(".product-card").count(), 1);
+await page.getByRole("button", { name: "Save product", exact: true }).click();
+await page.getByRole("button", { name: "Find prices" }).click();
+assert.equal(await page.locator("h1").innerText(), "Pepsi Max");
+assert.match(
+  await page.locator(".empty").innerText(),
+  /pricing isn.t connected/,
+);
 await page.getByRole("button", { name: "Scan", exact: true }).click();
 await page.getByLabel("Barcode number").fill("123");
 await page.getByRole("button", { name: "Find product", exact: true }).click();
 await page.getByRole("alert").waitFor();
-assert.match(await page.getByRole("alert").innerText(), /8–14/);
+assert.match(await page.getByRole("alert").innerText(), /8, 12, 13 or 14/);
 await page.getByRole("button", { name: "Scan barcode", exact: true }).click();
 await page.getByRole("alert").waitFor();
 assert.match(await page.getByRole("alert").innerText(), /camera/);

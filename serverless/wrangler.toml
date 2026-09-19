@@ -1,0 +1,6 @@
+name = "stash-prices"
+main = "worker.mjs"
+compatibility_date = "2026-09-19"
+
+[vars]
+ALLOWED_ORIGINS = "https://sean-p-clohessy.github.io,http://localhost:5173,http://127.0.0.1:5173"

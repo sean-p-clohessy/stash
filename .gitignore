@@ -5,3 +5,8 @@ test-results/
 playwright-report/
 .sites-runtime/
 artifacts/
+.env
+.env.*
+!.env.example
+serverless/.dev.vars
+serverless/.wrangler/

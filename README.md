@@ -2,59 +2,83 @@
 
 [Open Stash](https://sean-p-clohessy.github.io/stash/)
 
-A responsive, dark-first stock-up optimiser built with React, TypeScript and Vite. All retailer offers and historical observations are explicitly **demo data**, not current prices.
+React + TypeScript + Vite, deployed independently to GitHub Pages. Product identification is live through Open Food Facts v3. Retailer prices remain explicitly **demo data** until an authorised pricing API is connected.
 
-## Run
+## Run and verify
 
 Requires Node.js 22+ and npm.
 
 ```sh
 npm install
 npm run dev
+npm test
+npm run build
 ```
 
-Open the local URL printed by Vite. `npm run build` type-checks and produces `dist/`. `npm run preview` serves that production build. `npm test` runs the quantity engine tests.
+`npm run preview` serves `dist/`. `npm run test:browser` checks the user journeys, mobile layout, EAN image upload, provider error recovery and discovered-product persistence against a running server on port 5173. Scripts use Microsoft Edge on Windows; on other systems run `npx playwright install chromium`. Set `BROWSER_EXECUTABLE` to override. Screenshots stay in ignored `artifacts/`. `npm run format` formats source.
 
-`npm run test:browser` checks the main user journeys, mobile overflow, EAN image upload and error recovery against a running server on port 5173. The scripts use installed Microsoft Edge on Windows; on other systems, install Playwright Chromium with `npx playwright install chromium`. Set `BROWSER_EXECUTABLE` to override the browser path. Screenshots are saved in `artifacts/`. `npm run format` formats the source.
+## Product identification
 
-## Try it
+Scan a barcode with the camera, upload a photo, or enter its digits. Lookup checks seeded records, then the discovered local catalogue, then the provider chain. A recognised product is cached with a stable `external-<barcode>` ID and can be viewed, searched, added to My Stash, assigned stock/consumption/target-price settings and rescanned locally after reopening the browser. No matching demo record is needed.
 
-1. Search Fanta Zero and choose 30 units, or a custom amount up to 500.
-2. Compare retailer-specific mixed pack combinations, checkout totals and historical value.
-3. Save the product to My Stash; adjust current stock and expand Stock preferences.
-4. Set a per-unit price threshold in Alerts. Preferences persist locally; notifications are not sent.
-5. Open Scan and try camera, image upload, manual entry, or the included demo barcode `5449000054227`.
+Unknown or failed lookups offer manual creation with name, optional brand, pack quantity and stock counting unit. A nameless provider record retains its known metadata and asks for the missing name. Manual products enter the same catalogue. Missing/broken images use a neutral icon. No fictional images, prices, brands, sizes or histories are added.
 
-Memberships can be changed from Preferences. Clubcard and Lidl Plus are selected for the demo initially. Removing a membership excludes offers requiring it.
+The [Open Food Facts v3 product endpoint](https://openfoodfacts.github.io/documentation/docs/Product-Opener/v3/products/get-api-v3-product-code/) is queried with a minimal field list and eight-second timeout. Only barcode and field/localisation options are sent; uploaded photos are decoded on device. Browser User-Agent cannot reliably be overridden, so the browser's normal header is used. A future server-side lookup should send `Stash/0.2 (https://github.com/sean-p-clohessy/stash)`.
 
-## How the calculation works
+External product data is attributed to Open Food Facts (Open Database Licence); supplied images remain subject to their source licence. The seeded Fanta demo barcode `5449000054227` and synthetic 990… mappings remain prototype fixtures and resolve before external providers. They should be validated before replacing the seeded catalogue with real canonical records.
 
-The integer dynamic-programming engine in `src/services/comparisonService.ts` finds the lowest pack spend at or above the desired quantity for each retailer. Equal totals prefer fewer surplus units. Packs are never mixed across retailers. The search is bounded at desired quantity plus the largest pack minus one: with positive prices, larger combinations cannot improve the minimum total. A saved maximum purchase quantity is a hard cap for stock recommendations and alerts.
+## Pack and stock semantics
 
-Prices use integer pence. Delivery is added once per retailer result; unit prices and savings include that cost. The demo uses in-store prices except Amazon, where the illustrated delivery fee is included. In-store totals exclude online delivery and basket minimums. These are not real checkout quotes.
+The defensive parser accepts explicit formats such as `330ml`, `24 × 330ml`, `6x500ml`, and `1.5L`. Litres/cl normalise to ml; kg to g. Outer pack count is separate from individual size: a 24 × 330ml record has `packCount:24` and `unitQuantity:330`. Ambiguous totals/servings/mixed packs stay unknown; the original quantity text is retained. Packaging type such as can/bottle is not inferred from volume.
 
-Typical price is the arithmetic mean of 12 seeded observations per product. Excellent means at least 20% below typical, good at least 8%, average within 8%, and expensive above that band. Recommendations use stock, target, monthly consumption, maximum purchase and historical savings. They do not automatically consume stock.
+Inventory counts underlying items (or the manually chosen unit), not outer multipacks or servings. Users can adjust current quantity, target, monthly consumption, maximum purchase and per-item target price. The existing maximum is a cap on the next purchase, not an automatic inventory ceiling. Alerts remain local preferences; push/email delivery is not active.
 
-## Structure
+## Persistence
 
-- `src/models`: canonical products, retailer metadata, normalised offers and local stock records.
-- `src/data`: 14 illustrated essentials, six retailers, multiple pack sizes and seeded price histories. Product artwork is stylised CSS packaging, not official pack photography. Barcode mappings are prototype fixtures; validate against real product records before a live launch.
-- `src/services/productService.ts`: catalogue search, comparison orchestration and an asynchronous retailer-adapter contract for future integrations.
-- `src/services/comparisonService.ts`: pure quantity solver and historical comparison logic.
-- `src/services/barcodeService.ts`: on-device image decode and product lookup.
-- `src/services/storage.ts`: guarded, versioned localStorage persistence with session fallback.
-- `src/pages/Scan.tsx`: camera lifecycle, upload, lookup and manual recovery.
+`stash.discoveredProducts` stores only identification metadata in a `{version:1,products:[...]}` envelope. Unversioned arrays migrate on the next write. Invalid entries are filtered individually; duplicate barcodes are deduplicated. Unsupported future versions or corrupt payloads are preserved without overwriting, with session-only fallback and a visible warning.
 
-## Barcode support
+Existing `stash.items.v1`, recent-search and membership keys remain compatible. Stash rows with missing product metadata retain their stock settings and offer re-scanning. Storage quota/privacy failures remain usable for the session and are reported. Data is device/browser-local; it is not synced. Cached lookup works offline after page assets load, but this is not an installable offline PWA.
 
-Image upload prefers native BarcodeDetector for supported EAN/UPC formats, then falls back to ZXing. Camera decoding uses ZXing and stops the camera on detection, cancellation or leaving Scan. Camera access requires HTTPS or localhost, a supported device and permission. Image quality and barcode format affect recognition. Real camera capture needs a physical-device check.
+## Pricing and optimisation
 
-Unknown barcodes are looked up through [Open Food Facts](https://world.openfoodfacts.org), with an eight-second timeout and manual-name fallback. Only the barcode is sent; photos stay on device. External details are attributed to Open Food Facts (Open Database Licence); supplied images remain subject to their source licence. Recognising an external product does not create retailer offers: its name is searched against the demo catalogue.
+The integer dynamic-programming engine minimises checkout spend within each retailer for at least the requested quantity. Equal totals prefer fewer surplus units. It can combine pack sizes, never mixes retailers and honours maximum purchase quantity. Positive prices permit a bound of requested quantity plus the largest pack minus one.
 
-## Static deployment
+Prices are integer GBP pence. Delivery is added once; per-unit costs and savings include it. Demo offers use in-store prices except Amazon's illustrated delivery fee. Minimum baskets/tiered delivery and stock limits are not modelled; an authorised adapter must not return offers whose conditions cannot be represented.
 
-Deploy the contents of `dist/` to any static host. Vite uses `base: './'`, so assets work under a GitHub Pages repository subpath. Navigation uses local application state rather than server routes, so no rewrite configuration is needed. For GitHub Pages, use an Actions workflow that installs dependencies, builds and uploads `dist/` as a Pages artifact. No credentials or backend are required.
+Demo historical scoring is the mean of 12 seeded observations. Excellent means at least 20% below typical; good at least 8%; average within 8%; expensive above that band. **Live offers never use seeded history for savings or scores.** Discovered products have no fabricated history.
 
-The included `.github/workflows/pages.yml` runs tests, builds, and deploys to GitHub Pages on every push to `main`. Repository Settings → Pages must use **GitHub Actions** as the build source. The workflow can also be run manually from Actions.
+## Connecting an authorised price provider
 
-Fonts load from Google Fonts with system fallbacks. Everything except external barcode lookup and fonts works without external services after assets load. There is no authentication, checkout, tracking, push service, scraper or remote database.
+Copy `.env.example` to `.env.local`, set the public `VITE_STASH_API_URL`, then restart/rebuild. Never put provider secrets in a `VITE_*` variable. On GitHub Actions, set the repository Actions variable `VITE_STASH_API_URL` and rerun the Pages workflow.
+
+Without configuration the app remains fully usable: seeded products retain labelled **DEMO PRICES**, and discovered products say “Live retailer pricing isn't connected yet.” The asynchronous API and demo providers return normalised offers to the same optimiser. Configured API results appear across Search, comparisons, My Stash and Alerts. Regular/member prices respect memberships; retrieval ages are shown on live comparisons. Up to three API requests run concurrently per catalogue refresh. Comparison and stock changes do not trigger requests.
+
+On API failure a visible notice explains the fallback; only seeded products receive demo offers. A successful empty response stays empty. Invalid currencies, identity mismatches, missing fulfilment/provenance data, malformed amounts, invalid timestamps and duplicate IDs are rejected.
+
+See [serverless/README.md](serverless/README.md) for the separate Worker scaffold and exact contract. It returns `provider_not_configured` until an authorised integration is implemented. No service is provisioned or credentials required for this phase. No supermarket or Trolley.co.uk scraping is performed.
+
+## Source structure
+
+- `src/models`: canonical product metadata, stock records and normalised offers.
+- `src/data/catalogue.ts`: seeded illustrations, prices and history.
+- `src/services/providers`: extensible `ProductLookupProvider` chain and Open Food Facts v3 adapter.
+- `src/services/productCache.ts`: versioned discovered-product persistence.
+- `src/services/packParser.ts`: conservative unit/pack parser.
+- `src/services/productService.ts`: combined search, demo/API orchestration and comparison entrypoint.
+- `src/services/priceApi.ts`: async `PriceProvider`, API client and response validation.
+- `src/hooks/usePricing.ts`: bounded catalogue price loading.
+- `src/services/comparisonService.ts`: pure integer optimiser and history arithmetic.
+- `src/pages/Scan.tsx`: preserved camera/upload lifecycle and improved product result flow.
+- `serverless/`: independent Worker example, config, contract and tests.
+
+## Camera and static deployment
+
+Camera scanning requires HTTPS or localhost, device support and permission. ZXing is used for camera decoding; image upload prefers native supported EAN/UPC detection, with ZXing fallback. Camera streams stop on detection, cancellation or leaving Scan. Physical-device capture still requires device QA.
+
+`.github/workflows/pages.yml` runs tests, builds and deploys `dist/` on pushes to `main`, or manually. Pages uses GitHub Actions as the source. Vite's relative asset base supports `/stash/`; state-based navigation requires no server rewrite. The frontend stays deployable without the separate pricing service.
+
+Fonts load from Google Fonts with system fallbacks. There is no authentication, checkout, tracking, push service, scraper or remote database.
+
+### Configured pricing UI check
+
+`npm run test:pricing` targets a second local Vite server on port 5174 started with `VITE_STASH_API_URL=https://prices.example.test`. The browser test intercepts that host with fixtures; no retailer is queried. It checks live provenance, timestamps, membership prices, delivery totals and fallback labelling. These fixture results are not evidence of a connected real price provider.

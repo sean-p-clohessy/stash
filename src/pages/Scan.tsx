@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Camera, Upload, ScanLine, ArrowRight, Check, X } from "lucide-react";
 import type { IScannerControls } from "@zxing/browser";
-import type { Product } from "../models";
-import { products } from "../data/catalogue";
+import type { Product, StashItem } from "../models";
+import { ProductArt } from "../components/ProductArt";
+import {
+  barcodeValid,
+  manualProduct,
+  packLabel,
+  unitLabel,
+} from "../services/productMetadata";
 import {
   decodeImage,
   resolveBarcode,
@@ -10,12 +16,21 @@ import {
 } from "../services/barcodeService";
 export default function Scan({
   onProduct,
-  onSearch,
+  discovered,
+  onDiscovered,
+  onSave,
+  stash,
+  onViewStash,
 }: {
   onProduct: (p: Product) => void;
-  onSearch: (name: string) => void;
+  discovered: Product[];
+  onDiscovered: (product: Product) => Product;
+  onSave: (product: Product) => void;
+  stash: StashItem[];
+  onViewStash: (id: string) => void;
 }) {
   const video = useRef<HTMLVideoElement>(null);
+  const resultPanel = useRef<HTMLDivElement>(null);
   const controls = useRef<IScannerControls | null>(null);
   const generation = useRef(0);
   const mounted = useRef(true);
@@ -24,6 +39,18 @@ export default function Scan({
   const [error, setError] = useState("");
   const [code, setCode] = useState("");
   const [found, setFound] = useState<BarcodeResult | null>(null);
+  const [draft, setDraft] = useState({
+    name: "",
+    brand: "",
+    quantity: "",
+    unit: "",
+  });
+  const saved = found?.product
+    ? stash.find((s) => s.productId === found.product!.id)
+    : undefined;
+  useEffect(() => {
+    if (found) resultPanel.current?.scrollIntoView({ block: "start" });
+  }, [found?.barcode, found?.product?.name]);
   function stop() {
     generation.current++;
     controls.current?.stop();
@@ -48,14 +75,22 @@ export default function Scan({
     const token = generation.current;
     setError("");
     setFound(null);
-    if (!/^\d{8,14}$/.test(value)) {
-      setError("Enter an 8–14 digit product barcode.");
+    if (!barcodeValid(value)) {
+      setError("Enter an 8, 12, 13 or 14 digit product barcode.");
       return;
     }
     setCode(value);
     setBusy(true);
-    const result = await resolveBarcode(value);
+    const result = await resolveBarcode(value, discovered);
     if (mounted.current && token === generation.current) {
+      if (result.product?.name && !result.product.isSeeded)
+        result.product = onDiscovered(result.product);
+      setDraft({
+        name: result.product?.name || "",
+        brand: result.product?.brand || "",
+        quantity: result.product?.quantityText || "",
+        unit: result.product?.unit || "",
+      });
       setFound(result);
       setBusy(false);
     }
@@ -212,51 +247,162 @@ export default function Scan({
               </div>
             )}
             {found && (
-              <div className="panel scan-result">
+              <div className="panel scan-result" ref={resultPanel}>
                 <div className="kicker accent">
                   <Check size={17} />
-                  {found.name ? "FOUND IT" : "BARCODE CAPTURED"}
+                  {found.product?.name ? "FOUND IT" : "BARCODE CAPTURED"}
                 </div>
-                {found.image && (
-                  <img
-                    src={found.image}
-                    alt={found.name}
-                    className="external-product"
-                    referrerPolicy="no-referrer"
-                  />
-                )}
-                <h2>{found.name || "Give this product a name"}</h2>
-                <p>Barcode: {found.barcode}</p>
-                {found.message && <p>{found.message}</p>}
-                {!found.productId && (
-                  <label>
-                    Product name
-                    <input
-                      value={found.name}
-                      onChange={(e) =>
-                        setFound({ ...found, name: e.target.value })
-                      }
-                    />
-                  </label>
-                )}
-                <button
-                  className="primary"
-                  disabled={!found.name.trim()}
-                  onClick={() =>
-                    found.productId
-                      ? onProduct(
-                          products.find((p) => p.id === found.productId)!,
-                        )
-                      : onSearch(found.name)
-                  }
-                >
-                  Find stock-up deals <ArrowRight size={17} />
-                </button>
-                {!found.productId && (
-                  <p className="fineprint">
-                    We’ll search our demo catalogue. Products outside it may not
-                    have offers yet.
-                  </p>
+                {found.product?.name ? (
+                  <>
+                    <div className="scan-product-heading">
+                      <ProductArt product={found.product} />
+                      <div>
+                        <h2>{found.product.name}</h2>
+                        {found.product.brand && <p>{found.product.brand}</p>}
+                        <p>{packLabel(found.product)}</p>
+                      </div>
+                    </div>
+                    <p className="barcode-number">
+                      Barcode <strong>{found.barcode}</strong>
+                    </p>
+                    {saved && (
+                      <div className="recommendation good">
+                        <strong>Already in My Stash</strong>
+                        <p>
+                          Current stock: {saved.current}{" "}
+                          {unitLabel(found.product)}s
+                        </p>
+                      </div>
+                    )}
+                    <div className="scan-actions">
+                      <button
+                        className="primary"
+                        onClick={() =>
+                          saved
+                            ? onViewStash(found.product!.id)
+                            : onSave(found.product!)
+                        }
+                      >
+                        {saved ? "View Stash item" : "Add to My Stash"}
+                      </button>
+                      <button
+                        className="secondary"
+                        onClick={() => onProduct(found.product!)}
+                      >
+                        Find prices <ArrowRight size={17} />
+                      </button>
+                    </div>
+                    {found.product.source === "open-food-facts" && (
+                      <p className="fineprint">
+                        Product details from Open Food Facts. Retailer prices
+                        are separate.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <h2>
+                      {found.product
+                        ? "One detail missing"
+                        : "Make it part of your Stash"}
+                    </h2>
+                    <p className="barcode-number">
+                      Barcode <strong>{found.barcode}</strong>
+                    </p>
+                    <p>
+                      {found.message ||
+                        "This product was recognised, but its name is missing. Add it below to continue."}
+                    </p>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const product = manualProduct(
+                          found.barcode,
+                          draft.name,
+                          draft.brand,
+                          draft.quantity,
+                          draft.unit,
+                        );
+                        const cached = onDiscovered(
+                          found.product
+                            ? {
+                                ...found.product,
+                                ...product,
+                                source: found.product.source,
+                                image: found.product.image,
+                                category: found.product.category,
+                                categories: found.product.categories,
+                                genericName: found.product.genericName,
+                                servingSize: found.product.servingSize,
+                                productType: found.product.productType,
+                              }
+                            : product,
+                        );
+                        setFound({ barcode: found.barcode, product: cached });
+                      }}
+                    >
+                      <label>
+                        Product name
+                        <input
+                          required
+                          maxLength={300}
+                          value={draft.name}
+                          onChange={(e) =>
+                            setDraft({ ...draft, name: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Brand (optional)
+                        <input
+                          maxLength={300}
+                          value={draft.brand}
+                          onChange={(e) =>
+                            setDraft({ ...draft, brand: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Pack quantity (optional)
+                        <input
+                          placeholder="e.g. 6 × 500ml"
+                          maxLength={300}
+                          value={draft.quantity}
+                          onChange={(e) =>
+                            setDraft({ ...draft, quantity: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Count stock in
+                        <select
+                          value={draft.unit}
+                          onChange={(e) =>
+                            setDraft({ ...draft, unit: e.target.value })
+                          }
+                        >
+                          <option value="">Items</option>
+                          {[
+                            "can",
+                            "bottle",
+                            "bar",
+                            "bag",
+                            "roll",
+                            "tablet",
+                            "capsule",
+                            "pack",
+                          ].map((unit) => (
+                            <option key={unit} value={unit}>
+                              {unit}s
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button className="primary" disabled={!draft.name.trim()}>
+                        Save product <Check size={17} />
+                      </button>
+                    </form>
+                  </>
                 )}
               </div>
             )}

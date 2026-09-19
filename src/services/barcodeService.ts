@@ -1,41 +1,42 @@
+import type { Product } from "../models";
 import { products } from "../data/catalogue";
+import { OpenFoodFactsProvider } from "./providers/openFoodFactsProvider";
+import {
+  resolveFromProviders,
+  type ProductLookupProvider,
+} from "./providers/productLookupProvider";
+import { barcodeValid } from "./productMetadata";
 export type BarcodeResult = {
   barcode: string;
-  name: string;
-  image?: string;
-  productId?: string;
+  product: Product | null;
   message?: string;
 };
-export async function resolveBarcode(barcode: string): Promise<BarcodeResult> {
-  const local = products.find((p) => p.barcode === barcode);
-  if (local) return { barcode, name: local.name, productId: local.id };
-  try {
-    const response = await fetch(
-      `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(barcode)}.json?fields=product_name,image_front_small_url`,
-      { signal: AbortSignal.timeout(8000) },
-    );
-    if (!response.ok) throw Error();
-    const data = await response.json();
-    if (data.status === 1 && data.product?.product_name)
-      return {
-        barcode,
-        name: data.product.product_name,
-        image: data.product.image_front_small_url,
-      };
+const providers: ProductLookupProvider[] = [new OpenFoodFactsProvider()];
+export async function resolveBarcode(
+  barcode: string,
+  discovered: Product[] = [],
+  chain = providers,
+): Promise<BarcodeResult> {
+  if (!barcodeValid(barcode))
     return {
       barcode,
-      name: "",
-      message:
-        "This barcode isn’t in the product database. Give it a name to search our catalogue.",
+      product: null,
+      message: "Enter an 8, 12, 13 or 14 digit product barcode.",
     };
-  } catch {
-    return {
-      barcode,
-      name: "",
-      message:
-        "The product database is unavailable. Your barcode is safe — enter a name to keep going.",
-    };
-  }
+  const local =
+    products.find((p) => p.barcode === barcode) ||
+    discovered.find((p) => p.barcode === barcode);
+  if (local) return { barcode, product: local };
+  const result = await resolveFromProviders(barcode, chain);
+  return {
+    barcode,
+    product: result.product,
+    message: result.product
+      ? undefined
+      : result.failed
+        ? "The product database is unavailable. Enter the details below to save this product yourself."
+        : "This barcode isn’t in the product database yet. Add the details to teach your Stash.",
+  };
 }
 type NativeDetector = {
   detect: (source: ImageBitmap) => Promise<{ rawValue: string }[]>;

@@ -1,14 +1,14 @@
-import type { Product, Retailer, Offer } from "../models";
+import type { Product, SeededProduct, Retailer, Offer } from "../models";
 const rows: [
   string,
   string,
   string,
-  Product["category"],
+  SeededProduct["category"],
   number,
   string,
   string,
   string,
-  Product["art"],
+  SeededProduct["art"],
   number,
 ][] = [
   [
@@ -180,8 +180,10 @@ const rows: [
     160,
   ],
 ];
-export const products: Product[] = rows.map((r, i) => ({
+export const products: SeededProduct[] = rows.map((r, i) => ({
   id: r[0],
+  source: "demo",
+  isSeeded: true,
   name: r[1],
   brand: r[2],
   variant: r[1].replace(r[2], "").trim(),
@@ -249,6 +251,9 @@ export const offers: Offer[] = products.flatMap((p, i) =>
     [12, 18, 24].map((packSize, k) => ({
       id: `${p.id}-${r.id}-${packSize}`,
       productId: p.id,
+      provider: "demo",
+      isLive: false,
+      availability: "in_stock",
       retailerId: r.id,
       title: `${p.name} ${packSize} × ${p.unitQuantity}${p.measurement}`,
       packSize,

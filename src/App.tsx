@@ -19,12 +19,16 @@ import {
   X,
 } from "lucide-react";
 import type { Product, StashItem } from "./models";
-import { products, retailers } from "./data/catalogue";
+import { products as seededProducts, retailers } from "./data/catalogue";
 import { compare, searchProducts } from "./services/productService";
 import { money, score, unitPrice } from "./services/comparisonService";
 import { useStored } from "./services/storage";
 import { ProductArt } from "./components/ProductArt";
 import Scan from "./pages/Scan";
+import { useDiscoveredProducts } from "./services/productCache";
+import { productMeta, unitLabel, packLabel } from "./services/productMetadata";
+import { usePricing } from "./hooks/usePricing";
+import { updatedLabel, pricingConfigured } from "./services/priceApi";
 type Page = "search" | "scan" | "stash" | "alerts";
 const strings = (v: unknown): v is string[] =>
   Array.isArray(v) && v.every((x) => typeof x === "string");
@@ -33,7 +37,7 @@ const validStash = (v: unknown): v is StashItem[] =>
   v.every(
     (x) =>
       x &&
-      products.some((p) => p.id === x.productId) &&
+      typeof x.productId === "string" &&
       ["current", "target", "monthly", "maximum", "alertPence"].every(
         (k) => Number.isFinite(x[k]) && x[k] >= 0,
       ) &&
@@ -44,6 +48,13 @@ const validStash = (v: unknown): v is StashItem[] =>
       typeof x.alertEnabled === "boolean",
   );
 export default function App() {
+  const { discovered, cache, cacheWarning } = useDiscoveredProducts();
+  const products: Product[] = [...seededProducts, ...discovered];
+  const {
+    pricing,
+    loading: pricesLoading,
+    retry: retryPrices,
+  } = usePricing(products);
   const [page, setPage] = useState<Page>("search");
   const [selected, setSelected] = useState<Product | null>(null);
   const [query, setQuery] = useState("");
@@ -101,7 +112,9 @@ export default function App() {
         target: 30,
         monthly: 30,
         maximum: 60,
-        alertPence: Math.round(product.history[1] * 0.75),
+        alertPence: product.history.length
+          ? Math.round(product.history[1] * 0.75)
+          : 0,
         alertEnabled: false,
       },
     ]);
@@ -110,12 +123,18 @@ export default function App() {
   function patch(id: string, values: Partial<StashItem>) {
     setStash(stash.map((s) => (s.productId === id ? { ...s, ...values } : s)));
   }
-  const resultProducts = searchProducts(query).filter(
+  const resultProducts = searchProducts(query, products).filter(
     (p) => category === "All essentials" || p.category === category,
   );
-  const results = selected ? compare(selected.id, quantity, memberships) : [];
+  const selectedPrices = selected ? pricing(selected) : null;
+  const results = selected
+    ? compare(selected.id, quantity, memberships, undefined, selectedPrices!)
+    : [];
   const best = results[0];
-  const history = selected && best ? score(selected, best.unitPence) : null;
+  const history =
+    selected && best && selectedPrices?.kind === "demo"
+      ? score(selected, best.unitPence)
+      : null;
   const nav = [
     { id: "search", name: "Search", icon: Search },
     { id: "scan", name: "Scan", icon: ScanLine },
@@ -123,9 +142,11 @@ export default function App() {
     { id: "alerts", name: "Alerts", icon: Bell },
   ] as const;
   function productCard(p: Product) {
-    const availableDeals = compare(p.id, 30, memberships);
+    const snapshot = pricing(p);
+    const availableDeals = compare(p.id, 30, memberships, undefined, snapshot);
     const deal = availableDeals[0];
-    const grade = score(p, deal.unitPence);
+    const grade =
+      deal && snapshot.kind === "demo" ? score(p, deal.unitPence) : null;
     return (
       <article className="product-card" key={p.id}>
         <button
@@ -142,28 +163,29 @@ export default function App() {
         </button>
         <button className="product-open" onClick={() => open(p)}>
           <div className="art-well">
-            <span className="saving">
-              <ArrowDown size={12} />
-              {Math.round(grade.below)}% vs typical
-            </span>
+            {grade && (
+              <span className="saving">
+                <ArrowDown size={12} />
+                {Math.round(grade.below)}% vs typical
+              </span>
+            )}
             <ProductArt product={p} />
           </div>
           <div className="product-copy">
-            <span className="eyebrow">
-              {p.category} · {p.unitQuantity}
-              {p.measurement}
-            </span>
+            <span className="eyebrow">{productMeta(p)}</span>
             <h3>{p.name}</h3>
             <div className="card-price">
               <strong>
-                {unitPrice(deal.unitPence)}
-                <small> / {p.unit}</small>
+                {deal ? unitPrice(deal.unitPence) : "Find prices"}
+                {deal && <small> / {unitLabel(p)}</small>}
               </strong>
               <ArrowRight size={18} />
             </div>
             <div className="card-retailer">
-              Best at {deal.retailer.name}
-              <span>{availableDeals.length} retailers</span>
+              {deal
+                ? `${snapshot.kind === "demo" ? "Demo" : "Live"} · ${deal.retailer.name}`
+                : "Saved and ready to stash"}
+              {deal && <span>{availableDeals.length} retailers</span>}
             </div>
           </div>
         </button>
@@ -341,7 +363,7 @@ export default function App() {
                   </p>
                 </div>
                 <span className="demo-badge">
-                  <span /> Demo prices
+                  <span /> Demo prices labelled
                 </span>
               </div>
               <div className="categories">
@@ -401,12 +423,16 @@ export default function App() {
                 <ProductArt product={selected} />
               </div>
               <div>
-                <div className="kicker muted">
-                  {selected.category} / {selected.unitQuantity}
-                  {selected.measurement}
-                </div>
+                <div className="kicker muted">{productMeta(selected)}</div>
                 <h1>{selected.name}</h1>
-                <p>More of your favourite. For less.</p>
+                <p>
+                  {selected.isSeeded
+                    ? "More of your favourite. For less."
+                    : packLabel(selected)}
+                </p>
+                {!selected.isSeeded && (
+                  <p className="fineprint">Barcode: {selected.barcode}</p>
+                )}
               </div>
               <button className="secondary" onClick={() => save(selected)}>
                 {stash.some((s) => s.productId === selected.id) ? (
@@ -426,7 +452,7 @@ export default function App() {
                     <h3>How much are you stashing?</h3>
                     <p>
                       We’ll find the lowest total for at least {quantity}{" "}
-                      {selected.unit}s.
+                      {unitLabel(selected)}s.
                     </p>
                   </div>
                   <div className="quantity-options">
@@ -471,8 +497,34 @@ export default function App() {
                 </div>
                 <div className="section-heading offers-title">
                   <h3>{results.length} ways to stock up</h3>
-                  <span>Lowest total first</span>
+                  <span>
+                    {selectedPrices?.kind === "demo"
+                      ? "DEMO PRICES"
+                      : selectedPrices?.kind === "live"
+                        ? "Live prices · lowest total first"
+                        : ""}
+                  </span>
                 </div>
+                {pricesLoading && pricingConfigured && (
+                  <p role="status" className="price-status">
+                    Checking retailer prices…
+                  </p>
+                )}
+                {selectedPrices?.status === "unavailable" && (
+                  <div className="notice">
+                    <div>
+                      <p>
+                        {selectedPrices.message}
+                        {selectedPrices.kind === "demo"
+                          ? " Showing demo prices instead."
+                          : ""}
+                      </p>
+                      <button className="text-button" onClick={retryPrices}>
+                        Try again
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {results.map((r, i) => (
                   <article
                     className={`offer panel ${i === 0 ? "best-offer" : ""}`}
@@ -494,9 +546,12 @@ export default function App() {
                         </span>
                         <h3>{r.retailer.name}</h3>
                         <span
-                          className={`score ${score(selected, r.unitPence).tone}`}
+                          className={`score ${selectedPrices?.kind === "demo" ? score(selected, r.unitPence)?.tone || "" : "good"}`}
                         >
-                          {score(selected, r.unitPence).label}
+                          {selectedPrices?.kind === "demo"
+                            ? score(selected, r.unitPence)?.label ||
+                              "Demo price"
+                            : "Live price"}
                         </span>
                       </div>
                       <div className="offer-main">
@@ -504,51 +559,84 @@ export default function App() {
                           {r.items.map((item) => (
                             <h4 key={item.offer.id}>
                               {item.count} × {item.offer.packSize}-pack{" "}
-                              <span>{selected.name}</span>
+                              <span>{item.offer.title}</span>
                             </h4>
                           ))}
                           <p>
-                            {r.units} {selected.unit}s total ·{" "}
+                            {r.units} {unitLabel(selected)}s total ·{" "}
                             {r.excess === 0
                               ? "Exactly your quantity"
-                              : `${r.excess} extra ${selected.unit}s`}
+                              : `${r.excess} extra ${unitLabel(selected)}s`}
                           </p>
                         </div>
                         <div className="offer-price">
                           <strong>{money(r.totalPence)}</strong>
                           <span>
-                            {unitPrice(r.unitPence)} / {selected.unit}
+                            {unitPrice(r.unitPence)} / {unitLabel(selected)}
                           </span>
                         </div>
                       </div>
                       <div className="offer-foot">
                         <span>
                           {r.items.some((x) => x.offer.loyalty)
-                            ? `${r.items[0].offer.loyalty} required`
+                            ? `${[...new Set(r.items.map((x) => x.offer.loyalty).filter(Boolean))].join(", ")} required`
                             : "No membership needed"}
                         </span>
                         <span>
-                          {r.retailer.deliveryPence
-                            ? `${money(r.retailer.deliveryPence)} delivery included`
-                            : "In-store price · delivery excluded"}
+                          {r.retailer.deliveryNote ||
+                            (r.retailer.deliveryPence
+                              ? `${money(r.retailer.deliveryPence)} delivery included`
+                              : "In-store price · delivery excluded")}
                         </span>
                       </div>
+                      {selectedPrices?.kind === "live" && (
+                        <p className="fineprint live-updated">
+                          {updatedLabel(
+                            r.items
+                              .map((x) => x.offer.retrievedAt)
+                              .filter((t): t is string => !!t)
+                              .sort()[0],
+                          )}
+                        </p>
+                      )}
                     </div>
                   </article>
                 ))}
                 {!results.length && (
                   <div className="empty panel">
-                    No eligible offers for this quantity. Try a smaller amount
-                    or adjust your memberships.
+                    {selectedPrices?.offers.length
+                      ? "No eligible offers for this quantity. Try a smaller amount or adjust your memberships."
+                      : selectedPrices?.status === "ready"
+                        ? "No retailer offers are available for this product yet."
+                        : selectedPrices?.status === "unavailable"
+                          ? "Your product and stock are saved. Prices will appear when the service is available."
+                          : "Live retailer pricing isn't connected yet."}
+                    {!selected.isSeeded && (
+                      <p>
+                        You can still keep this product in My Stash and set a
+                        target price.
+                      </p>
+                    )}
                   </div>
                 )}
                 <p className="fineprint">
-                  Illustrative offers, not live retailer prices. Pack
-                  combinations stay within one retailer. In-store prices do not
-                  include online delivery.
+                  {selectedPrices?.kind === "demo"
+                    ? "Illustrative offers, not live retailer prices. "
+                    : ""}
+                  Pack combinations stay within one retailer. Delivery terms are
+                  shown with each result.
                 </p>
               </section>
               <aside>
+                {!history && (
+                  <section className="panel history">
+                    <h3>Price history</h3>
+                    <p>
+                      No verified price history is available for this product
+                      yet.
+                    </p>
+                  </section>
+                )}
                 {history && best && (
                   <>
                     <section className="panel history">
@@ -628,9 +716,9 @@ export default function App() {
                         </div>
                       </dl>
                       <p className="fineprint">
-                        Per {selected.unit}. Typical = mean of 12 seeded weekly
-                        observations. Excellent: ≥20% below typical; good: ≥8%;
-                        average: within 8%; expensive: above that.
+                        Per {unitLabel(selected)}. Typical = mean of 12 seeded
+                        weekly observations. Excellent: ≥20% below typical;
+                        good: ≥8%; average: within 8%; expensive: above that.
                       </p>
                     </section>
                     <section className="panel saving-note">
@@ -644,8 +732,8 @@ export default function App() {
                             history.average * best.units - best.totalPence,
                           ),
                         )}{" "}
-                        less than buying {best.units} {selected.unit}s at the
-                        typical price.
+                        less than buying {best.units} {unitLabel(selected)}s at
+                        the typical price.
                       </p>
                       <button
                         className="text-button"
@@ -666,10 +754,17 @@ export default function App() {
         {page === "scan" && (
           <Scan
             onProduct={open}
-            onSearch={(name) => {
-              setQuery(name);
-              setCategory("All essentials");
-              navigate("search");
+            discovered={discovered}
+            onDiscovered={cache}
+            onSave={save}
+            stash={stash}
+            onViewStash={(id) => {
+              navigate("stash");
+              requestAnimationFrame(() => {
+                const item = document.getElementById("stash-" + id);
+                item?.scrollIntoView({ block: "center" });
+                item?.focus();
+              });
             }}
           />
         )}
@@ -698,17 +793,50 @@ export default function App() {
             )}
             <div className="stash-grid">
               {stash.map((s) => {
-                const p = products.find((p) => p.id === s.productId)!;
+                const p = products.find((p) => p.id === s.productId);
+                if (!p)
+                  return (
+                    <article
+                      className="panel missing-product"
+                      key={s.productId}
+                    >
+                      <h3>Saved product details unavailable</h3>
+                      <p>
+                        Your stock settings are intact. Scan the barcode again
+                        to restore the product details.
+                      </p>
+                      <button
+                        className="secondary"
+                        onClick={() => navigate("scan")}
+                      >
+                        Scan product
+                      </button>
+                    </article>
+                  );
                 const need = Math.max(1, s.target - s.current);
-                const deal = compare(p.id, need, memberships, s.maximum)[0];
-                const grade = deal ? score(p, deal.unitPence) : null;
+                const deal = compare(
+                  p.id,
+                  need,
+                  memberships,
+                  s.maximum,
+                  pricing(p),
+                )[0];
+                const grade =
+                  deal && pricing(p).kind === "demo"
+                    ? score(p, deal.unitPence)
+                    : null;
                 const worth =
                   deal &&
                   grade &&
                   grade.below >= 8 &&
                   s.current < Math.max(s.target, s.monthly / 2);
                 return (
-                  <article className="panel stash-card" key={s.productId}>
+                  <article
+                    className="panel stash-card"
+                    id={"stash-" + p.id}
+                    tabIndex={-1}
+                    key={s.productId}
+                  >
                     <div className="stash-card-top">
                       <ProductArt product={p} />
                       <div>
@@ -740,7 +868,7 @@ export default function App() {
                       </button>
                       <div>
                         <strong>{s.current}</strong>
-                        <span>{p.unit}s left</span>
+                        <span>{unitLabel(p)}s left</span>
                       </div>
                       <button
                         className="icon-button"
@@ -774,17 +902,32 @@ export default function App() {
                         {worth
                           ? "Worth stocking up"
                           : deal
-                            ? "No rush"
-                            : "No pack within your limit"}
+                            ? grade
+                              ? "No rush"
+                              : "Prices available"
+                            : pricing(p).offers.length
+                              ? "No pack within your limit"
+                              : "Price not available yet"}
                       </strong>
                       <p>
                         {worth && deal && grade
-                          ? `From ${unitPrice(deal.unitPence)}/${p.unit}. Save about ${money(Math.max(0, grade.average * deal.units - deal.totalPence))} versus typical on ${deal.units} units.`
+                          ? `Demo: from ${unitPrice(deal.unitPence)}/${unitLabel(p)}. Save about ${money(Math.max(0, grade.average * deal.units - deal.totalPence))} versus typical on ${deal.units} units.`
                           : deal
-                            ? `Best ${unitPrice(deal.unitPence)}/${p.unit}. ${s.current >= s.target ? "You’re comfortably stocked." : "Wait for a better deal, or compare if you need it."}`
-                            : "Increase your maximum purchase quantity to see a recommendation."}
+                            ? `${pricing(p).kind === "demo" ? "Demo best" : "Live price"}: ${unitPrice(deal.unitPence)}/${unitLabel(p)}. ${s.current >= s.target ? "You’re comfortably stocked." : grade ? "Wait for a better deal, or compare if you need it." : "Compare the available offers when you need to top up."}`
+                            : pricing(p).offers.length
+                              ? "Increase your maximum purchase quantity to see a recommendation."
+                              : pricing(p).status === "ready"
+                                ? "No retailer offers are available yet."
+                                : pricing(p).message}
                       </p>
                     </div>
+                    <p className="fineprint stock-unit-note">
+                      Stock is counted in {unitLabel(p)}s
+                      {p.packCount && p.packCount > 1
+                        ? `, not ${p.packCount}-item multipacks`
+                        : ""}
+                      .
+                    </p>
                     <details>
                       <summary>Stock preferences</summary>
                       <div className="form-grid">
@@ -830,6 +973,24 @@ export default function App() {
                             />
                           </label>
                         ))}
+                        <label>
+                          Target price (pence / {unitLabel(p)})
+                          <input
+                            type="number"
+                            min="0"
+                            max="10000"
+                            value={s.alertPence || ""}
+                            placeholder="Not set"
+                            onChange={(e) =>
+                              patch(p.id, {
+                                alertPence: Math.min(
+                                  10000,
+                                  Math.max(0, Number(e.target.value) || 0),
+                                ),
+                              })
+                            }
+                          />
+                        </label>
                       </div>
                     </details>
                   </article>
@@ -850,8 +1011,8 @@ export default function App() {
               <div>
                 <strong>Saved here. Notifications aren’t active yet.</strong>
                 <p>
-                  This prototype checks demo prices while you browse. Email and
-                  push notifications need a future backend.
+                  Price thresholds are checked while you browse. Demo prices are
+                  labelled. Email and push notifications are not connected.
                 </p>
               </div>
             </div>
@@ -866,8 +1027,33 @@ export default function App() {
             )}
             <div className="alerts-list">
               {stash.map((s) => {
-                const p = products.find((p) => p.id === s.productId)!;
-                const deal = compare(p.id, s.target, memberships, s.maximum)[0];
+                const p = products.find((p) => p.id === s.productId);
+                if (!p)
+                  return (
+                    <article
+                      className="panel missing-product"
+                      key={s.productId}
+                    >
+                      <h3>Saved product details unavailable</h3>
+                      <p>
+                        Your stock settings are intact. Scan the barcode again
+                        to restore the product details.
+                      </p>
+                      <button
+                        className="secondary"
+                        onClick={() => navigate("scan")}
+                      >
+                        Scan product
+                      </button>
+                    </article>
+                  );
+                const deal = compare(
+                  p.id,
+                  s.target,
+                  memberships,
+                  s.maximum,
+                  pricing(p),
+                )[0];
                 const hit = deal && deal.unitPence < s.alertPence;
                 return (
                   <article className="panel alert-card" key={p.id}>
@@ -876,22 +1062,28 @@ export default function App() {
                       <h3>{p.name}</h3>
                       <p>
                         {deal
-                          ? `Current demo best: ${unitPrice(deal.unitPence)} / ${p.unit}`
-                          : "No pack combination within your limit"}
+                          ? `${pricing(p).kind === "demo" ? "Current demo best" : "Live price"}: ${unitPrice(deal.unitPence)} / ${unitLabel(p)}`
+                          : pricing(p).offers.length
+                            ? "No pack combination within your limit"
+                            : pricing(p).status === "ready"
+                              ? "No retailer offers yet"
+                              : pricing(p).message}
                       </p>
                       {s.alertEnabled && hit && (
                         <span className="score good">
-                          Your target is met in demo prices
+                          Your target is met
+                          {pricing(p).kind === "demo" ? " in demo prices" : ""}
                         </span>
                       )}
                     </div>
                     <label>
-                      Alert below (pence / {p.unit})
+                      Alert below (pence / {unitLabel(p)})
                       <input
                         type="number"
                         min="1"
                         max="10000"
-                        value={s.alertPence}
+                        value={s.alertPence || ""}
+                        placeholder="Not set"
                         onChange={(e) =>
                           patch(p.id, {
                             alertPence: Math.min(
@@ -903,6 +1095,7 @@ export default function App() {
                       />
                     </label>
                     <button
+                      disabled={!s.alertPence}
                       role="switch"
                       aria-checked={s.alertEnabled}
                       aria-label={`Price alert for ${p.name}`}
@@ -923,8 +1116,13 @@ export default function App() {
       <footer>
         <span className="footer-brand">stash.</span>
         <span>A little more stocked. A little less spent.</span>
-        <span>Prototype · Illustrative prices only</span>
+        <span>Product lookup connected · Demo prices labelled</span>
       </footer>
+      {cacheWarning && (
+        <div className="notice cache-warning" role="status">
+          {cacheWarning}
+        </div>
+      )}
       {(toast || storageError) && (
         <div className="toast" role="status">
           {storageError ? (

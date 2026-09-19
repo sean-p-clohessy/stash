@@ -9,7 +9,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
     "format": "prettier --write src scripts",
-    "test:browser": "node scripts/browser-check.mjs && node scripts/barcode-check.mjs"
+    "test:browser": "node scripts/browser-check.mjs && node scripts/barcode-check.mjs && node scripts/live-catalogue-check.mjs",
+    "test:pricing": "node scripts/live-pricing-check.mjs"
   },
   "dependencies": {
     "@zxing/browser": "^0.1.5",
